@@ -47,7 +47,6 @@
             background-color: #555;
         }
 
-        /* Styling for our new control panel */
         #controls {
             background-color: rgba(255, 255, 255, 0.7);
             padding: 20px;
@@ -115,7 +114,6 @@
         const statusText = document.getElementById('status-text');
         const controls = document.getElementById('controls');
         
-        // New elements for the sliders and volume display
         const volNumberDisplay = document.getElementById('vol-number');
         const warnSlider = document.getElementById('warn-slider');
         const loudSlider = document.getElementById('loud-slider');
@@ -125,24 +123,43 @@
         let audioContext;
         let analyser;
         let microphone;
+        let compressor; // We are adding a new variable for our compressor
 
-        // Update the text labels when you drag the sliders
         warnSlider.addEventListener('input', () => warnValDisplay.innerText = warnSlider.value);
         loudSlider.addEventListener('input', () => loudValDisplay.innerText = loudSlider.value);
 
         startBtn.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // We ask for the microphone, but we also ask the browser NOT to try and do its own
+                // volume leveling, so it doesn't fight our compressor code!
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { autoGainControl: false } 
+                });
                 
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioContext.createAnalyser();
-                microphone = audioContext.createMediaStreamSource(stream);
                 
-                microphone.connect(analyser);
+                // Step 1: Create the tools
+                microphone = audioContext.createMediaStreamSource(stream);
+                compressor = audioContext.createDynamicsCompressor();
+                analyser = audioContext.createAnalyser();
+                
+                // Step 2: Configure the compressor
+                // These numbers tell it to aggressively turn down loud noises 
+                // but let quiet noises pass through normally.
+                compressor.threshold.setValueAtTime(-50, audioContext.currentTime); // Start compressing at low volumes
+                compressor.knee.setValueAtTime(40, audioContext.currentTime);       // Make the transition smooth
+                compressor.ratio.setValueAtTime(12, audioContext.currentTime);      // Squish loud sounds down by a factor of 12
+                compressor.attack.setValueAtTime(0, audioContext.currentTime);      // React instantly
+                compressor.release.setValueAtTime(0.25, audioContext.currentTime);  // Let go quickly
+
+                // Step 3: Connect them in a chain (Mic -> Compressor -> Analyser)
+                microphone.connect(compressor);
+                compressor.connect(analyser);
+                
                 analyser.fftSize = 256;
 
                 startBtn.classList.add('hidden');
-                controls.classList.remove('hidden'); // Show the controls
+                controls.classList.remove('hidden');
                 
                 checkVolume();
 
@@ -163,39 +180,31 @@
             }
             let averageVolume = sum / bufferLength;
 
-            // Round the volume for easier reading
             let roundedVolume = Math.round(averageVolume);
-            
-            // Show the current volume on the screen
             volNumberDisplay.innerText = roundedVolume;
 
             updateVisuals(roundedVolume);
 
-            // Slightly slow down the updates so it's not too visually chaotic
             setTimeout(() => {
                 requestAnimationFrame(checkVolume);
             }, 100); 
         }
 
         function updateVisuals(volume) {
-            // Read the thresholds directly from the sliders
             const warningThreshold = parseInt(warnSlider.value);
             const loudThreshold = parseInt(loudSlider.value);
 
             if (volume < warningThreshold) {
-                // Quiet
                 document.body.style.backgroundColor = "#a8e6cf"; 
                 emojiDisplay.innerText = "😴";
                 statusText.innerText = "Shh... The emoji is sleeping.";
                 emojiDisplay.style.transform = "scale(1)";
             } else if (volume >= warningThreshold && volume < loudThreshold) {
-                // Warning
                 document.body.style.backgroundColor = "#ffd3b6"; 
                 emojiDisplay.innerText = "🤨";
                 statusText.innerText = "Careful! You're waking it up!";
                 emojiDisplay.style.transform = "scale(1.1)";
             } else {
-                // Too Loud
                 document.body.style.backgroundColor = "#ffaaa5"; 
                 emojiDisplay.innerText = "😵";
                 statusText.innerText = "TOO LOUD!";
