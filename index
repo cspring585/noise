@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classroom Noise Monitor</title>
+    <style>
+        /* CSS for styling the page */
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.5s ease; /* Smooth transition between colors */
+            background-color: #f0f0f0; /* Default gray before starting */
+            text-align: center;
+        }
+
+        #emoji-display {
+            font-size: 150px;
+            margin-bottom: 20px;
+            transition: transform 0.2s ease;
+        }
+
+        #status-text {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            background-color: #555;
+        }
+
+        /* We will hide the button once the monitoring starts */
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="emoji-display">👋</div>
+    <div id="status-text">Ready to monitor noise!</div>
+    <button id="start-btn">Start Listening</button>
+
+    <script>
+        // JavaScript for the logic
+        const startBtn = document.getElementById('start-btn');
+        const emojiDisplay = document.getElementById('emoji-display');
+        const statusText = document.getElementById('status-text');
+
+        let audioContext;
+        let analyser;
+        let microphone;
+
+        // Start listening when the button is clicked
+        startBtn.addEventListener('click', async () => {
+            try {
+                // Request microphone access
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Set up the Audio Context and Analyser
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+                
+                microphone.connect(analyser);
+                analyser.fftSize = 256; // Determines how detailed the audio data is
+
+                // Hide the start button
+                startBtn.classList.add('hidden');
+                
+                // Start the loop to check volume
+                checkVolume();
+
+            } catch (err) {
+                console.error("Error accessing microphone:", err);
+                statusText.innerText = "Please allow microphone access!";
+            }
+        });
+
+        function checkVolume() {
+            // Get the frequency data from the microphone
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate the average volume level
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+            }
+            let averageVolume = sum / bufferLength;
+
+            // Update the UI based on the volume level
+            updateVisuals(averageVolume);
+
+            // Request the next frame to keep checking the volume continuously
+            requestAnimationFrame(checkVolume);
+        }
+
+        function updateVisuals(volume) {
+            // You can adjust these threshold numbers based on your specific room's acoustics!
+            const quietThreshold = 30;
+            const loudThreshold = 60;
+
+            if (volume < quietThreshold) {
+                // Quiet
+                document.body.style.backgroundColor = "#a8e6cf"; // Soft Green
+                emojiDisplay.innerText = "😴";
+                statusText.innerText = "Shh... The emoji is sleeping.";
+                emojiDisplay.style.transform = "scale(1)";
+            } else if (volume >= quietThreshold && volume < loudThreshold) {
+                // Warning
+                document.body.style.backgroundColor = "#ffd3b6"; // Soft Yellow/Orange
+                emojiDisplay.innerText = "🤨";
+                statusText.innerText = "Careful! You're waking it up!";
+                emojiDisplay.style.transform = "scale(1.1)";
+            } else {
+                // Too Loud
+                document.body.style.backgroundColor = "#ffaaa5"; // Soft Red
+                emojiDisplay.innerText = "😵";
+                statusText.innerText = "TOO LOUD!";
+                // Add a little shaking effect by scaling up and down quickly
+                emojiDisplay.style.transform = `scale(${1.2 + Math.random() * 0.2})`; 
+            }
+        }
+    </script>
+</body>
+</html>
